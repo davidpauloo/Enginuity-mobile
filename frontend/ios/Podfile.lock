@@ -1,0 +1,160 @@
+PODS:
+  - agora_rtc_engine (6.5.3):
+    - AgoraIrisRTC_iOS (= 4.5.2-build.1)
+    - AgoraRtcEngine_iOS (= 4.5.2)
+    - Flutter
+  - agora_rtm (2.2.5):
+    - AgoraIrisRTM_iOS (= 2.2.5-build.2)
+    - AgoraRtm (= 2.2.5)
+    - Flutter
+  - AgoraInfra_iOS (1.2.13.1)
+  - AgoraIrisRTC_iOS (4.5.2-build.1)
+  - AgoraIrisRTM_iOS (2.2.5-build.2)
+  - AgoraRtcEngine_iOS (4.5.2):
+    - AgoraRtcEngine_iOS/AIAEC (= 4.5.2)
+    - AgoraRtcEngine_iOS/AIAECLL (= 4.5.2)
+    - AgoraRtcEngine_iOS/AINS (= 4.5.2)
+    - AgoraRtcEngine_iOS/AINSLL (= 4.5.2)
+    - AgoraRtcEngine_iOS/AudioBeauty (= 4.5.2)
+    - AgoraRtcEngine_iOS/ClearVision (= 4.5.2)
+    - AgoraRtcEngine_iOS/ContentInspect (= 4.5.2)
+    - AgoraRtcEngine_iOS/FaceCapture (= 4.5.2)
+    - AgoraRtcEngine_iOS/FaceDetection (= 4.5.2)
+    - AgoraRtcEngine_iOS/LipSync (= 4.5.2)
+    - AgoraRtcEngine_iOS/ReplayKit (= 4.5.2)
+    - AgoraRtcEngine_iOS/RtcBasic (= 4.5.2)
+    - AgoraRtcEngine_iOS/SpatialAudio (= 4.5.2)
+    - AgoraRtcEngine_iOS/VideoAv1CodecDec (= 4.5.2)
+    - AgoraRtcEngine_iOS/VideoAv1CodecEnc (= 4.5.2)
+    - AgoraRtcEngine_iOS/VideoCodecDec (= 4.5.2)
+    - AgoraRtcEngine_iOS/VideoCodecEnc (= 4.5.2)
+    - AgoraRtcEngine_iOS/VirtualBackground (= 4.5.2)
+    - AgoraRtcEngine_iOS/VQA (= 4.5.2)
+  - AgoraRtcEngine_iOS/AIAEC (4.5.2)
+  - AgoraRtcEngine_iOS/AIAECLL (4.5.2)
+  - AgoraRtcEngine_iOS/AINS (4.5.2)
+  - AgoraRtcEngine_iOS/AINSLL (4.5.2)
+  - AgoraRtcEngine_iOS/AudioBeauty (4.5.2)
+  - AgoraRtcEngine_iOS/ClearVision (4.5.2)
+  - AgoraRtcEngine_iOS/ContentInspect (4.5.2)
+  - AgoraRtcEngine_iOS/FaceCapture (4.5.2)
+  - AgoraRtcEngine_iOS/FaceDetection (4.5.2)
+  - AgoraRtcEngine_iOS/LipSync (4.5.2)
+  - AgoraRtcEngine_iOS/ReplayKit (4.5.2)
+  - AgoraRtcEngine_iOS/RtcBasic (4.5.2):
+    - AgoraInfra_iOS (= 1.2.13.1)
+  - AgoraRtcEngine_iOS/SpatialAudio (4.5.2)
+  - AgoraRtcEngine_iOS/VideoAv1CodecDec (4.5.2)
+  - AgoraRtcEngine_iOS/VideoAv1CodecEnc (4.5.2)
+  - AgoraRtcEngine_iOS/VideoCodecDec (4.5.2)
+  - AgoraRtcEngine_iOS/VideoCodecEnc (4.5.2)
+  - AgoraRtcEngine_iOS/VirtualBackground (4.5.2)
+  - AgoraRtcEngine_iOS/VQA (4.5.2)
+  - AgoraRtm (2.2.5):
+    - AgoraRtm/RtmBasic (= 2.2.5)
+    - AgoraRtm/RtmKit (= 2.2.5)
+  - AgoraRtm/RtmBasic (2.2.5)
+  - AgoraRtm/RtmKit (2.2.5)
+  - Flutter (1.0.0)
+  - flutter_secure_storage (6.0.0):
+    - Flutter
+  - fluttertoast (0.0.2):
+    - Flutter
+  - image_cropper (0.0.4):
+    - Flutter
+    - TOCropViewController (~> 2.8.0)
+  - image_picker_ios (0.0.1):
+    - Flutter
+  - iris_method_channel (0.0.1):
+    - Flutter
+  - path_provider_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - permission_handler_apple (9.3.0):
+    - Flutter
+  - sqflite_darwin (0.0.4):
+    - Flutter
+    - FlutterMacOS
+  - TOCropViewController (2.8.0)
+  - url_launcher_ios (0.0.1):
+    - Flutter
+  - webview_flutter_wkwebview (0.0.1):
+    - Flutter
+    - FlutterMacOS
+
+DEPENDENCIES:
+  - agora_rtc_engine (from `.symlinks/plugins/agora_rtc_engine/ios`)
+  - agora_rtm (from `.symlinks/plugins/agora_rtm/ios`)
+  - Flutter (from `Flutter`)
+  - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
+  - fluttertoast (from `.symlinks/plugins/fluttertoast/ios`)
+  - image_cropper (from `.symlinks/plugins/image_cropper/ios`)
+  - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
+  - iris_method_channel (from `.symlinks/plugins/iris_method_channel/ios`)
+  - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
+  - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
+  - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
+  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
+  - webview_flutter_wkwebview (from `.symlinks/plugins/webview_flutter_wkwebview/darwin`)
+
+SPEC REPOS:
+  trunk:
+    - AgoraInfra_iOS
+    - AgoraIrisRTC_iOS
+    - AgoraIrisRTM_iOS
+    - AgoraRtcEngine_iOS
+    - AgoraRtm
+    - TOCropViewController
+
+EXTERNAL SOURCES:
+  agora_rtc_engine:
+    :path: ".symlinks/plugins/agora_rtc_engine/ios"
+  agora_rtm:
+    :path: ".symlinks/plugins/agora_rtm/ios"
+  Flutter:
+    :path: Flutter
+  flutter_secure_storage:
+    :path: ".symlinks/plugins/flutter_secure_storage/ios"
+  fluttertoast:
+    :path: ".symlinks/plugins/fluttertoast/ios"
+  image_cropper:
+    :path: ".symlinks/plugins/image_cropper/ios"
+  image_picker_ios:
+    :path: ".symlinks/plugins/image_picker_ios/ios"
+  iris_method_channel:
+    :path: ".symlinks/plugins/iris_method_channel/ios"
+  path_provider_foundation:
+    :path: ".symlinks/plugins/path_provider_foundation/darwin"
+  permission_handler_apple:
+    :path: ".symlinks/plugins/permission_handler_apple/ios"
+  sqflite_darwin:
+    :path: ".symlinks/plugins/sqflite_darwin/darwin"
+  url_launcher_ios:
+    :path: ".symlinks/plugins/url_launcher_ios/ios"
+  webview_flutter_wkwebview:
+    :path: ".symlinks/plugins/webview_flutter_wkwebview/darwin"
+
+SPEC CHECKSUMS:
+  agora_rtc_engine: 0c7d50312967c4dc31c3c45e50589ce48f57e08a
+  agora_rtm: 7b085b01b7c7ed083483e5d1947d48c960e6a62d
+  AgoraInfra_iOS: 3691b2b277a1712a35ae96de25af319de0d73d08
+  AgoraIrisRTC_iOS: eab58c126439adf5ec99632828a558ea216860da
+  AgoraIrisRTM_iOS: 8db20697f717de6e1db5dd4c842432889f284220
+  AgoraRtcEngine_iOS: 97e2398a2addda9057815a2a583a658e36796ff6
+  AgoraRtm: d92cdfca825f3e6817c315d7dd6403742494f7ca
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_secure_storage: 1ed9476fba7e7a782b22888f956cce43e2c62f13
+  fluttertoast: 2c67e14dce98bbdb200df9e1acf610d7a6264ea1
+  image_cropper: 64567491beea6cd1bc4b11948e2babb590de5826
+  image_picker_ios: 7fe1ff8e34c1790d6fff70a32484959f563a928a
+  iris_method_channel: 7d661cf3259b3009ae423508470dbeb9374446ee
+  path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
+  permission_handler_apple: 4ed2196e43d0651e8ff7ca3483a069d469701f2d
+  sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
+  TOCropViewController: 797deaf39c90e6e9ddd848d88817f6b9a8a09888
+  url_launcher_ios: 694010445543906933d732453a59da0a173ae33d
+  webview_flutter_wkwebview: 8ebf4fded22593026f7dbff1fbff31ea98573c8d
+
+PODFILE CHECKSUM: de146b36ccd756dfe6cd03fcce16760b74d29503
+
+COCOAPODS: 1.16.2

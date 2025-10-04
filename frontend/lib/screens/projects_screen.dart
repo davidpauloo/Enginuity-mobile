@@ -1,17 +1,13 @@
 // lib/screens/projects_screen.dart
-import 'package:chat_app/screens/chat_screen.dart';
-import 'package:chat_app/screens/home_screen.dart';
-import 'package:chat_app/screens/login_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:chat_app/models/project.dart'; // Import your Project model
-import 'package:chat_app/services/project_service.dart'; // Import your ProjectService
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/route_manager.dart';
-import 'package:intl/intl.dart'; // For date formatting
-import 'package:fluttertoast/fluttertoast.dart'; // Import fluttertoast
-import 'package:chat_app/screens/project_detail_screen.dart'; // Import the detail screen
-import 'package:chat_app/services/auth_service.dart'; // NEW: Import AuthService to get current user name
-import 'package:cached_network_image/cached_network_image.dart'; // Still needed for CachedNetworkImageProvider if you use it elsewhere, or for future use
+import 'package:intl/intl.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+
+import 'package:chat_app/models/project_model.dart';
+import 'package:chat_app/services/project_service.dart';
+import 'package:chat_app/services/auth_service.dart';
+import 'package:chat_app/screens/project_detail_screen.dart';
+import 'package:chat_app/screens/login_screen.dart';
 
 class ProjectsScreen extends StatefulWidget {
   const ProjectsScreen({super.key});
@@ -25,12 +21,10 @@ class _ProjectsScreenState extends State<ProjectsScreen>
   final ProjectService _projectService = ProjectService();
   final AuthService _authService = AuthService();
 
-  List<Project> _allProjects = [];
   List<Project> _ongoingProjects = [];
   List<Project> _finishedProjects = [];
   bool _isLoading = true;
   String? _errorMessage;
-  String? _currentClientFullName;
 
   late TabController _tabController;
 
@@ -38,98 +32,49 @@ class _ProjectsScreenState extends State<ProjectsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(_handleTabSelection);
-    _loadUserDataAndFetchProjects();
+    _fetchProjects();
   }
 
   @override
   void dispose() {
-    _tabController.removeListener(_handleTabSelection);
     _tabController.dispose();
     super.dispose();
   }
 
-  void _handleTabSelection() {
-    if (_tabController.indexIsChanging) {
-      setState(() {});
-    }
-  }
-
-  Future<void> _loadUserDataAndFetchProjects() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-    try {
-      final user = await _authService.getCurrentUser();
-      if (user == null || user.fullName.isEmpty) {
-        throw Exception('User not logged in or full name not found.');
-      }
-      _currentClientFullName = user.fullName;
-      await _fetchProjects();
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Initialization failed: ${e.toString()}';
-      });
-      Fluttertoast.showToast(
-        msg: _errorMessage!,
-        toastLength: Toast.LENGTH_LONG,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
   Future<void> _fetchProjects() async {
-    if (_currentClientFullName == null) {
-      setState(() {
-        _errorMessage = 'User not identified. Cannot load projects.';
-        _isLoading = false;
-      });
-      return;
-    }
-
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      _allProjects = [];
-      _ongoingProjects = [];
-      _finishedProjects = [];
     });
-    try {
-      final fetchedProjects = await _projectService.fetchProjects(
-          clientName: _currentClientFullName);
-      final now = DateTime.now().toLocal();
 
-      List<Project> tempOngoing = [];
-      List<Project> tempFinished = [];
+    try {
+      final fetchedProjects = await _projectService.fetchProjects();
+      final today = DateTime.now();
+
+      List<Project> ongoing = [];
+      List<Project> finished = [];
 
       for (var project in fetchedProjects) {
-        if (project.targetDeadline != null &&
-            project.targetDeadline!.isBefore(now)) {
-          tempFinished.add(project);
+        final deadlineDate = project.targetDeadline;
+        if (deadlineDate != null && deadlineDate.isBefore(today)) {
+          finished.add(project);
         } else {
-          tempOngoing.add(project);
+          ongoing.add(project);
         }
       }
 
-      tempOngoing.sort((a, b) => (a.targetDeadline ?? DateTime(3000))
+      ongoing.sort((a, b) => (a.targetDeadline ?? DateTime(3000))
           .compareTo(b.targetDeadline ?? DateTime(3000)));
-      tempFinished.sort((a, b) => (b.targetDeadline ?? DateTime(3000))
+      finished.sort((a, b) => (b.targetDeadline ?? DateTime(3000))
           .compareTo(a.targetDeadline ?? DateTime(3000)));
 
       setState(() {
-        _allProjects = fetchedProjects;
-        _ongoingProjects = tempOngoing;
-        _finishedProjects = tempFinished;
+        _ongoingProjects = ongoing;
+        _finishedProjects = finished;
       });
+
       Fluttertoast.showToast(
-        msg: 'Projects refreshed successfully!',
+        msg: 'Projects loaded successfully!',
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
         backgroundColor: Colors.green,
@@ -138,18 +83,12 @@ class _ProjectsScreenState extends State<ProjectsScreen>
     } catch (e) {
       setState(() {
         _errorMessage = 'Failed to load projects: ${e.toString()}';
-        print('Error fetching projects: $e'); // Keep this print for debugging
       });
-      Fluttertoast.showToast(
-        msg: _errorMessage!,
-        toastLength: Toast.LENGTH_LONG,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
+      _showErrorToast(_errorMessage!);
+
       if (e.toString().contains('Unauthorized') ||
-          e.toString().contains('Forbidden')) {
-        _authService.logout();
+          e.toString().contains('token')) {
+        await _authService.logout();
         if (mounted) {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -157,179 +96,371 @@ class _ProjectsScreenState extends State<ProjectsScreen>
         }
       }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
+  }
+
+  void _showErrorToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_LONG,
+      gravity: ToastGravity.BOTTOM,
+      backgroundColor: Colors.red,
+      textColor: Colors.white,
+    );
   }
 
   String _formatDate(DateTime? date) {
     if (date == null) return 'N/A';
-    return DateFormat('M/d/yyyy').format(date);
+    return DateFormat('MMM d, yyyy').format(date);
   }
 
-  Widget _buildProjectCard(Project project, {bool isFinished = false}) {
-    final String? imageUrl = project.imageUrl;
+  Color _getStatusColor(String? status) {
+    switch (status?.toLowerCase()) {
+      case 'completed':
+        return Colors.green;
+      case 'in-progress':
+        return Colors.blue;
+      case 'pending':
+        return Colors.orange;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
 
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ProjectDetailScreen(
-              project: project,
+  int _calculateProgress(Project project) {
+    if (project.activities.isEmpty) return 0;
+    final completed = project.activities
+        .where((a) => a.status?.toLowerCase() == 'completed')
+        .length;
+    return ((completed / project.activities.length) * 100).round();
+  }
+
+  Future<void> _refreshSingleProject(String id) async {
+    try {
+      final fresh = await _projectService.fetchProjectById(id);
+      if (!mounted) return;
+      setState(() {
+        _ongoingProjects =
+            _ongoingProjects.map((p) => p.id == fresh.id ? fresh : p).toList();
+        _finishedProjects =
+            _finishedProjects.map((p) => p.id == fresh.id ? fresh : p).toList();
+      });
+    } catch (_) {
+      // optional: show a toast
+    }
+  }
+
+  Widget _buildProjectCard(Project project) {
+    final progress = _calculateProgress(project);
+    final status = project.status ?? 'pending';
+    final imageUrl = project.imageUrl;
+    final displayName = project.description ?? project.name ?? 'Unnamed Project';
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: InkWell(
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProjectDetailScreen(project: project),
             ),
-          ),
-        );
-      },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12.0),
-        child: Container(
-          height: 180,
-          color: const Color(0xFF262626),
-          child: Stack(
-            children: [
-              // Conditional for Background Image or "No Image" text
-              Positioned.fill(
-                child: imageUrl != null && imageUrl.isNotEmpty
-                    ? FadeInImage.assetNetwork(
-                        // Make sure 'assets/loading_placeholder.png' exists and is declared
-                        placeholder: 'assets/loading_placeholder.png',
-                        imageErrorBuilder: (context, error, stackTrace) {
-                          print(
-                              'Error loading image for ${project.clientName}: $error');
-                          // If there's an error loading the network image, fallback to "No Image"
-                          return _buildNoImageContent();
-                        },
-                        image: imageUrl,
-                        fit: BoxFit.cover,
-                      )
-                    : _buildNoImageContent(), // Display "No Image" content when imageUrl is empty
-              ),
-
-              // Gradient Overlay for text readability (applied over image or "No Image" content)
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withOpacity(0.0),
-                        Colors.black.withOpacity(0.8),
-                      ],
-                      stops: const [0.4, 1.0],
+          );
+          if (project.id != null) {
+            await _refreshSingleProject(project.id!);
+          }
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
+              child: Stack(
+                children: [
+                  Container(
+                    height: 180,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                    ),
+                    child: imageUrl != null && imageUrl.isNotEmpty
+                        ? Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return _buildNoImagePlaceholder();
+                            },
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Center(
+                                child: CircularProgressIndicator(
+                                  value: loadingProgress.expectedTotalBytes !=
+                                          null
+                                      ? loadingProgress.cumulativeBytesLoaded /
+                                          loadingProgress.expectedTotalBytes!
+                                      : null,
+                                ),
+                              );
+                            },
+                          )
+                        : _buildNoImagePlaceholder(),
+                  ),
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withOpacity(0.7),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-
-              // Text Content (Client Name, Location, Dates)
-              Positioned(
-                left: 16.0,
-                right: 16.0,
-                bottom: 16.0,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      project.description ?? 'No Description',
-                      style: const TextStyle(
-                        fontSize: 22.0,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4.0),
-                    Text(
-                      project.location ?? 'N/A',
-                      style: const TextStyle(
-                        fontSize: 16.0,
-                        color: Colors.white70,
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(status),
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      child: Text(
+                        status.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 8.0),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  ),
+                  Positioned(
+                    bottom: 12,
+                    left: 12,
+                    right: 12,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Start: ${_formatDate(project.startDate)}',
+                          displayName,
                           style: const TextStyle(
-                            fontSize: 14.0,
-                            color: Colors.white54,
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
-                          'Deadline: ${_formatDate(project.targetDeadline)}',
-                          style: TextStyle(
-                            fontSize: 14.0,
-                            color: isFinished
-                                ? Colors.white54
-                                : Colors.redAccent.shade100,
+                        const SizedBox(height: 4),
+                        if (project.location != null &&
+                            project.location!.isNotEmpty)
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.location_on,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  project.location!,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
                       ],
                     ),
-                  ],
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Progress',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                                Text(
+                                  '$progress%',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF412ad5),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: progress / 100,
+                                backgroundColor: Colors.grey[200],
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                  Color(0xFF412ad5),
+                                ),
+                                minHeight: 6,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildInfoChip(
+                          icon: Icons.calendar_today,
+                          label: 'Start',
+                          value: _formatDate(project.startDate),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildInfoChip(
+                          icon: Icons.event,
+                          label: 'Deadline',
+                          value: _formatDate(project.targetDeadline),
+                          isDeadline: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoChip({
+    required IconData icon,
+    required String label,
+    required String value,
+    bool isDeadline = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isDeadline
+            ? Colors.red.withOpacity(0.1)
+            : Colors.grey.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                icon,
+                size: 14,
+                color: isDeadline ? Colors.red : Colors.black54,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDeadline ? Colors.red : Colors.black54,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: isDeadline ? Colors.red[700] : Colors.black87,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  // NEW: Widget for "No Image" display
-  Widget _buildNoImageContent() {
+  Widget _buildNoImagePlaceholder() {
     return Container(
-      alignment: Alignment.center,
-      color: const Color(0xFF262626), // Match background color from reference
-      child: const Text(
-        'No Image',
-        style: TextStyle(
-          fontSize: 36.0, // Large font size
-          fontWeight: FontWeight.bold,
-          color: Colors.grey, // Grey color for "No Image"
+      color: const Color(0xFF262626),
+      child: const Center(
+        child: Icon(
+          Icons.image_not_supported,
+          size: 60,
+          color: Colors.grey,
         ),
       ),
     );
   }
 
-  Widget _buildNoProjectsContent(String message) {
+  Widget _buildEmptyState(String message) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            Icon(
+              Icons.folder_open,
+              size: 80,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16, color: Colors.black54),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: () {
-                Get.offAll(() => const HomeScreen(initialIndex: 1));
-              },
-              icon: const Icon(Icons.chat_bubble_outline),
-              label: const Text(
-                'Chat with Project Managers',
-                style: TextStyle(fontSize: 16),
-              ),
-              style: ElevatedButton.styleFrom(
-                foregroundColor: Colors.white,
-                backgroundColor: const Color(0xFF412ad5),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.black54,
               ),
             ),
           ],
@@ -341,29 +472,49 @@ class _ProjectsScreenState extends State<ProjectsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Projects',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.black),
-            onPressed: _fetchProjects,
-          ),
-        ],
-      ),
+      backgroundColor: Colors.grey[50],
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFF412ad5),
+              ),
+            )
           : _errorMessage != null
               ? Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: Colors.red, fontSize: 16),
-                      textAlign: TextAlign.center,
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.error_outline,
+                          size: 80,
+                          color: Colors.red,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _errorMessage!,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 16,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton.icon(
+                          onPressed: _fetchProjects,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF412ad5),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 )
@@ -376,7 +527,11 @@ class _ProjectsScreenState extends State<ProjectsScreen>
                         labelColor: const Color(0xFF412ad5),
                         unselectedLabelColor: Colors.grey,
                         indicatorColor: const Color(0xFF412ad5),
-                        indicatorSize: TabBarIndicatorSize.tab,
+                        indicatorWeight: 3,
+                        labelStyle: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
                         tabs: const [
                           Tab(text: 'Ongoing & Upcoming'),
                           Tab(text: 'Finished'),
@@ -387,44 +542,33 @@ class _ProjectsScreenState extends State<ProjectsScreen>
                       child: TabBarView(
                         controller: _tabController,
                         children: [
-                          _ongoingProjects.isEmpty
-                              ? _buildNoProjectsContent(
-                                  'No ongoing or upcoming projects.',
-                                )
-                              : GridView.builder(
-                                  padding: const EdgeInsets.all(16.0),
-                                  gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 1,
-                                    childAspectRatio: 3 / 2,
-                                    crossAxisSpacing: 16.0,
-                                    mainAxisSpacing: 16.0,
+                          RefreshIndicator(
+                            onRefresh: _fetchProjects,
+                            color: const Color(0xFF412ad5),
+                            child: _ongoingProjects.isEmpty
+                                ? _buildEmptyState(
+                                    'No ongoing or upcoming projects')
+                                : ListView.builder(
+                                    padding: const EdgeInsets.all(16),
+                                    itemCount: _ongoingProjects.length,
+                                    itemBuilder: (context, index) =>
+                                        _buildProjectCard(
+                                            _ongoingProjects[index]),
                                   ),
-                                  itemCount: _ongoingProjects.length,
-                                  itemBuilder: (context, index) =>
-                                      _buildProjectCard(
-                                          _ongoingProjects[index]),
-                                ),
-                          _finishedProjects.isEmpty
-                              ? _buildNoProjectsContent(
-                                  'No finished projects.',
-                                )
-                              : GridView.builder(
-                                  padding: const EdgeInsets.all(16.0),
-                                  shrinkWrap: true,
-                                  gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 1,
-                                    childAspectRatio: 3 / 2,
-                                    crossAxisSpacing: 16.0,
-                                    mainAxisSpacing: 16.0,
+                          ),
+                          RefreshIndicator(
+                            onRefresh: _fetchProjects,
+                            color: const Color(0xFF412ad5),
+                            child: _finishedProjects.isEmpty
+                                ? _buildEmptyState('No finished projects')
+                                : ListView.builder(
+                                    padding: const EdgeInsets.all(16),
+                                    itemCount: _finishedProjects.length,
+                                    itemBuilder: (context, index) =>
+                                        _buildProjectCard(
+                                            _finishedProjects[index]),
                                   ),
-                                  itemCount: _finishedProjects.length,
-                                  itemBuilder: (context, index) =>
-                                      _buildProjectCard(
-                                          _finishedProjects[index],
-                                          isFinished: true),
-                                ),
+                          ),
                         ],
                       ),
                     ),

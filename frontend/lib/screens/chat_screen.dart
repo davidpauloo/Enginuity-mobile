@@ -1,9 +1,9 @@
 import 'dart:convert';
-
 import 'package:chat_app/key.dart';
 import 'package:chat_app/screens/chats_screen.dart';
 import 'package:chat_app/screens/login_screen.dart';
 import 'package:chat_app/services/auth_service.dart';
+import 'package:chat_app/config/unread_bus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -28,7 +28,11 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Map<String, dynamic>> filteredList = [];
   final TextEditingController searchController = TextEditingController();
   bool _isLoading = false;
-  Set<String> _onlineUserIds = {}; // Set to store IDs of online users
+  Set<String> _onlineUserIds = {};
+
+  // NEW: unread tracking
+  final Map<String, int> _unreadByUser = {};
+  String? _activeChatUserId;
 
   @override
   void initState() {
@@ -40,31 +44,58 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _initialize() async {
     await _loadUserToken();
     if (_userToken != null) {
+      await _restoreUnreadFromDisk();
       _connectSocket();
       await _fetchUsers('');
     }
+  }
+
+  Future<void> _restoreUnreadFromDisk() async {
+    try {
+      final raw = await _storage.read(key: 'unreadByUser');
+      if (raw == null) return;
+      final Map<String, dynamic> decoded = jsonDecode(raw);
+      _unreadByUser.clear();
+      decoded.forEach((k, v) {
+        if (v is int) _unreadByUser[k] = v;
+      });
+      _publishUnreadTotal();
+      setState(() {});
+    } catch (_) {/* ignore */}
+  }
+
+  Future<void> _persistUnreadToDisk() async {
+    try {
+      await _storage.write(key: 'unreadByUser', value: jsonEncode(_unreadByUser));
+    } catch (_) {/* ignore */}
+  }
+
+  void _publishUnreadTotal() {
+    final total = _unreadByUser.values.fold<int>(0, (a, b) => a + b);
+    UnreadBus.setChats(total);
   }
 
   Future<void> _loadUserToken() async {
     final token = await _authService.getToken();
     if (token == null) {
       if (mounted) {
-        Navigator.pushReplacement(context,
-            MaterialPageRoute(builder: (context) => const LoginScreen()));
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+        );
       }
       return;
     }
     setState(() {
       _userToken = token;
-      _currentUserId = _decodeToken(token)['id'];
+      _currentUserId = _decodeToken(token)['userId'];
     });
   }
 
   Map<String, dynamic> _decodeToken(String token) {
     final parts = token.split('.');
     if (parts.length != 3) throw Exception('Invalid token');
-    final payload =
-        utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
+    final payload = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
     return json.decode(payload);
   }
 
@@ -74,31 +105,35 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     try {
-      final response = await http.get(Uri.parse('$BACKEND_URL/api/users'),
-          headers: {
-            'Authorization': 'Bearer $_userToken',
-            'Content-Type': 'application/json'
-          });
+      final response = await http.get(
+        Uri.parse('$BACKEND_URL/api/messages/users'),
+        headers: {
+          'Authorization': 'Bearer $_userToken',
+          'Content-Type': 'application/json'
+        },
+      );
+
       if (response.statusCode == 200) {
         final List users = json.decode(response.body);
-        final List otherUsers =
-            users.where((user) => user['_id'] != _currentUserId).toList();
+        final List otherUsers = users.where((user) => user['_id'] != _currentUserId).toList();
+
         setState(() {
           userList = otherUsers.cast<Map<String, dynamic>>();
           _filterUsers();
         });
+
         await _fetchLatestMessages();
       } else {
         Fluttertoast.showToast(
-            msg: 'Failed to load users: ${response.statusCode}',
-            gravity: ToastGravity.BOTTOM);
-        print(
-            'Failed to load users: ${response.statusCode} - ${response.body}');
+          msg: 'Failed to load users: ${response.statusCode}',
+          gravity: ToastGravity.BOTTOM,
+        );
       }
     } catch (e) {
       Fluttertoast.showToast(
-          msg: 'Error fetching users: $e', gravity: ToastGravity.BOTTOM);
-      print('Error fetching users: $e');
+        msg: 'Error fetching users: $e',
+        gravity: ToastGravity.BOTTOM,
+      );
     } finally {
       setState(() {
         _isLoading = false;
@@ -112,106 +147,158 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       for (var user in filteredList) {
         final response = await http.get(
-            Uri.parse(
-                '$BACKEND_URL/api/messages/$_currentUserId/${user['_id']}/latest'),
-            headers: {
-              'Authorization': 'Bearer $_userToken',
-              'Content-Type': 'application/json'
-            });
+          Uri.parse('$BACKEND_URL/api/messages/${user['_id']}'),
+          headers: {
+            'Authorization': 'Bearer $_userToken',
+            'Content-Type': 'application/json'
+          },
+        );
 
         if (response.statusCode == 200) {
-          final dynamic latestMessageData = json.decode(response.body);
-          setState(() {
-            user['latestMessage'] = latestMessageData != null
-                ? latestMessageData['text']
-                : 'No messages yet';
-            user['timestamp'] = latestMessageData != null
-                ? latestMessageData['createdAt']
-                : null;
-          });
+          final List messages = json.decode(response.body);
+          if (messages.isNotEmpty) {
+            final latestMessage = messages.last;
+            setState(() {
+              user['latestMessage'] = latestMessage['text'] ?? 'No messages yet';
+              user['timestamp'] = latestMessage['createdAt'];
+            });
+          }
         }
       }
+      _sortConversations();
       setState(() {});
-    } catch (e) {
-      print('Error fetching latest message $e');
-    }
+    } catch (_) {/* ignore */}
+  }
+
+  void _sortConversations() {
+    // Sort by timestamp (most recent first)
+    filteredList.sort((a, b) {
+      final aTime = a['timestamp'];
+      final bTime = b['timestamp'];
+      
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+      
+      return DateTime.parse(bTime).compareTo(DateTime.parse(aTime));
+    });
+    
+    // Also sort userList to maintain consistency
+    userList.sort((a, b) {
+      final aTime = a['timestamp'];
+      final bTime = b['timestamp'];
+      
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+      
+      return DateTime.parse(bTime).compareTo(DateTime.parse(aTime));
+    });
   }
 
   void _connectSocket() {
     socket = IO.io(
-        BACKEND_URL,
-        IO.OptionBuilder()
-            .setTransports(['websocket'])
-            .disableAutoConnect()
-            .build());
+      BACKEND_URL,
+      IO.OptionBuilder()
+          .setTransports(['websocket'])
+          .setAuth({'token': _userToken})
+          .disableAutoConnect()
+          .build(),
+    );
 
     socket?.connect();
 
     socket?.onConnect((_) {
-      print('Connected to socket server');
-      if (_currentUserId != null) {
-        socket?.emit('joinRoom', _currentUserId);
-        print('Emitted joinRoom for user: $_currentUserId');
-      }
+      // connected
     });
 
-    socket?.onDisconnect((_) => print('Disconnected from socket server'));
-    socket?.on('connect_error', (data) => print('Connect error: $data'));
-    socket?.onError((data) => print('Socket error: $data'));
+    socket?.onDisconnect((_) {});
 
-    socket?.on('initialOnlineUsers', (data) {
+    socket?.on('connect_error', (data) {});
+
+    socket?.onError((data) {});
+
+    socket?.on('getOnlineUsers', (data) {
       if (mounted) {
         setState(() {
           _onlineUserIds = Set<String>.from(data);
-          print('Initial online users: $_onlineUserIds');
         });
       }
     });
 
-    socket?.on('userOnline', (userId) {
-      if (mounted) {
-        setState(() {
-          _onlineUserIds.add(userId);
-          print('User online: $userId');
-        });
-      }
-    });
+    // NEW: Handle incoming messages in real-time
+    socket?.on('message:received', (data) {
+      try {
+        final String incomingSenderId =
+            data['senderId'] is Map ? data['senderId']['_id'] : data['senderId'].toString();
+        final String incomingReceiverId =
+            data['receiverId'] is Map ? data['receiverId']['_id'] : data['receiverId'].toString();
 
-    socket?.on('userOffline', (userId) {
-      if (mounted) {
-        setState(() {
-          _onlineUserIds.remove(userId);
-          print('User offline: $userId');
-        });
-      }
+        // Determine the other participant relative to current user
+        final String otherId =
+            incomingSenderId == _currentUserId ? incomingReceiverId : incomingSenderId;
+
+        // Update the user's latest message and timestamp
+        final userIndex = userList.indexWhere((user) => user['_id'] == otherId);
+        if (userIndex != -1) {
+          setState(() {
+            userList[userIndex]['latestMessage'] = data['text'] ?? 'No messages yet';
+            userList[userIndex]['timestamp'] = data['createdAt'];
+            
+            // If not currently viewing this chat, increment unread
+            if (otherId != _activeChatUserId && otherId != _currentUserId) {
+              _unreadByUser[otherId] = (_unreadByUser[otherId] ?? 0) + 1;
+              _publishUnreadTotal();
+              _persistUnreadToDisk();
+            }
+            
+            // Re-filter and sort to move this conversation to the top
+            _filterUsers();
+            _sortConversations();
+          });
+        }
+      } catch (_) {/* ignore */}
     });
   }
 
   void _filterUsers() {
     final query = searchController.text.trim().toLowerCase();
     setState(() {
-      filteredList = userList
-          .where(
-            (user) =>
-                user['email'].toString().toLowerCase().contains(query) ||
-                user['fullName'].toString().toLowerCase().contains(query),
-          )
-          .toList();
+      filteredList = userList.where((user) {
+        final email = user['email']?.toString().toLowerCase() ?? '';
+        final name = user['fullName']?.toString().toLowerCase() ?? '';
+        return email.contains(query) || name.contains(query);
+      }).toList();
     });
   }
 
   void _startChat(String receiverId, String receiverFullName) {
+    // Reset unread for this peer and mark as active
+    setState(() {
+      _activeChatUserId = receiverId;
+      _unreadByUser[receiverId] = 0;
+      _publishUnreadTotal();
+    });
+    _persistUnreadToDisk();
+
     Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (context) => ChatsScreen(
-                  senderId: _currentUserId!,
-                  receiverId: receiverId,
-                  receiverUsername: receiverFullName,
-                  socket: socket,
-                  onlineUserIds:
-                      _onlineUserIds, // <-- NEW: Pass the set of online user IDs
-                )));
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatsScreen(
+          senderId: _currentUserId!,
+          receiverId: receiverId,
+          receiverUsername: receiverFullName,
+          socket: socket,
+          onlineUserIds: _onlineUserIds,
+          onClosed: () {
+            // Clear active chat; future messages count as unread again
+            setState(() {
+              _activeChatUserId = null;
+            });
+          },
+        ),
+      ),
+    );
   }
 
   String _formatTimeStamp(String? timestamp) {
@@ -229,9 +316,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    socket?.off('initialOnlineUsers');
-    socket?.off('userOnline');
-    socket?.off('userOffline');
+    socket?.off('getOnlineUsers');
+    socket?.off('message:received');
     socket?.disconnect();
     searchController.removeListener(_filterUsers);
     searchController.dispose();
@@ -242,22 +328,26 @@ class _ChatScreenState extends State<ChatScreen> {
     final String fullName = user['fullName'] ?? 'Unknown User';
     final String userId = user['_id'] ?? '';
     final bool isOnline = _onlineUserIds.contains(userId);
+    final int unread = _unreadByUser[userId] ?? 0;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 0.3, horizontal: 0),
       color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(0)),
       child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(vertical: 10.0, horizontal: 15.0),
+        contentPadding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 15.0),
         title: Row(
           children: [
-            Text(
-              fullName,
-              style: const TextStyle(
+            Expanded(
+              child: Text(
+                fullName,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
                   color: Colors.black,
                   fontSize: 16.0,
-                  fontWeight: FontWeight.bold),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             const SizedBox(width: 8),
             Container(
@@ -272,20 +362,47 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         subtitle: Text(
           user['latestMessage'] ?? 'Tap to chat',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: Colors.black87),
         ),
-        trailing: user['timestamp'] != null
-            ? Text(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (user['timestamp'] != null)
+              Text(
                 _formatTimeStamp(user['timestamp']),
                 style: const TextStyle(color: Colors.black87, fontSize: 12),
-              )
-            : null,
+              ),
+            if (unread > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 8.0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    unread > 9 ? '9+' : '$unread',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
         leading: CircleAvatar(
           backgroundColor: Colors.white,
           child: Text(
             fullName.isNotEmpty ? fullName[0].toUpperCase() : '',
             style: const TextStyle(
-                color: Colors.blue, fontWeight: FontWeight.bold),
+              color: Colors.blue,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
         onTap: () => _startChat(userId, fullName),
@@ -299,8 +416,7 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 15.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(horizontal: 15.0, vertical: 8.0),
             child: SizedBox(
               height: 40.0,
               child: Align(
@@ -339,15 +455,15 @@ class _ChatScreenState extends State<ChatScreen> {
                       ? const Center(
                           child: Text(
                             'No user found',
-                            style:
-                                TextStyle(fontSize: 18, color: Colors.black54),
+                            style: TextStyle(fontSize: 18, color: Colors.black54),
                           ),
                         )
                       : ListView.builder(
                           itemCount: filteredList.length,
                           itemBuilder: (context, index) =>
                               _buildUserCard(filteredList[index]),
-                        ))
+                        ),
+                ),
         ],
       ),
     );

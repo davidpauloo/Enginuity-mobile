@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:chat_app/key.dart';
 import 'package:chat_app/screens/login_screen.dart';
+import 'package:chat_app/screens/videocall_screen.dart'; // Exports AgoraVideoCallScreen
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:http/http.dart' as http;
-import 'package:uuid/uuid.dart';
 
 class ChatsScreen extends StatefulWidget {
   final String senderId;
@@ -14,6 +14,7 @@ class ChatsScreen extends StatefulWidget {
   final String receiverUsername;
   final IO.Socket? socket;
   final Set<String> onlineUserIds;
+  final VoidCallback? onClosed;
 
   const ChatsScreen({
     super.key,
@@ -22,6 +23,7 @@ class ChatsScreen extends StatefulWidget {
     required this.receiverId,
     required this.receiverUsername,
     required this.onlineUserIds,
+    this.onClosed,
   });
 
   @override
@@ -33,80 +35,21 @@ class _ChatsScreenState extends State<ChatsScreen> {
   final ScrollController _scrollController = ScrollController();
   final List<Map<String, dynamic>> _messages = [];
   final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
-
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
   bool isLoadingMore = false;
   bool _isHistoryLoaded = false;
   int currentPage = 1;
-  final Uuid uuid = const Uuid();
-
   bool _isReceiverOnline = false;
+  bool _navigatingToCall = false;
 
   @override
   void initState() {
     super.initState();
     _isReceiverOnline = widget.onlineUserIds.contains(widget.receiverId);
 
-    widget.socket?.on('receiveMessage', (data) {
-      final String incomingSenderId = data['senderId'];
-      final String incomingReceiverId = data['receiverId'];
-      final String? clientMessageId = data['clientMessageId'];
-
-      if ((incomingSenderId == widget.senderId &&
-              incomingReceiverId == widget.receiverId) ||
-          (incomingSenderId == widget.receiverId &&
-              incomingReceiverId == widget.senderId)) {
-        final existingMessageIndex = _messages.indexWhere(
-          (msg) =>
-              msg['clientMessageId'] == clientMessageId &&
-              msg['status'] == 'sending',
-        );
-
-        if (existingMessageIndex != -1) {
-          setState(() {
-            _messages[existingMessageIndex]['_id'] = data['_id'];
-            _messages[existingMessageIndex]['createdAt'] =
-                DateTime.parse(data['createdAt']).toLocal();
-            _messages[existingMessageIndex]['status'] = 'sent';
-          });
-        } else {
-          final newMessage = {
-            '_id': data['_id'],
-            'text': data['text'],
-            'senderId': data['senderId'],
-            'createdAt': DateTime.parse(data['createdAt']).toLocal(),
-            'clientMessageId': clientMessageId,
-            'status': 'received',
-          };
-          _messages.insert(0, newMessage);
-          _listKey.currentState
-              ?.insertItem(0, duration: const Duration(milliseconds: 300));
-        }
-        _scrollController.animateTo(
-          0.0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-
-    widget.socket?.on('userOnline', (userId) {
-      if (mounted && userId == widget.receiverId) {
-        setState(() {
-          _isReceiverOnline = true;
-          print('Receiver ${widget.receiverUsername} is now online.');
-        });
-      }
-    });
-
-    widget.socket?.on('userOffline', (userId) {
-      if (mounted && userId == widget.receiverId) {
-        setState(() {
-          _isReceiverOnline = false;
-          print('Receiver ${widget.receiverUsername} is now offline.');
-        });
-      }
-    });
+    widget.socket?.on('message:received', _onSocketMessageReceived);
+    widget.socket?.on('getOnlineUsers', _onOnlineUsers);
 
     _loadChatHistory();
 
@@ -117,6 +60,81 @@ class _ChatsScreenState extends State<ChatsScreen> {
           _messages.isNotEmpty) {
         _loadMoreMessages();
       }
+    });
+  }
+
+  void _startVideoCall() {
+    if (_navigatingToCall || !mounted) return;
+    setState(() => _navigatingToCall = true);
+
+    final ts = DateTime.now().millisecondsSinceEpoch.toString().substring(4);
+    final id1 = widget.senderId.substring(0, 8);
+    final id2 = widget.receiverId.substring(0, 8);
+    final callId = 'call_${id1}_${id2}_$ts';
+
+    Navigator.of(context)
+        .push(
+      MaterialPageRoute(
+        builder: (_) => AgoraVideoCallScreen(
+          callId: callId,
+          currentUserId: widget.senderId,
+          currentUserName: 'Client',
+          targetUserId: widget.receiverId,
+          targetUserName: widget.receiverUsername,
+        ),
+      ),
+    )
+        .whenComplete(() {
+      if (mounted) setState(() => _navigatingToCall = false);
+    });
+  }
+
+  void _onSocketMessageReceived(dynamic data) {
+    try {
+      final String incomingSenderId =
+          data['senderId'] is Map ? data['senderId']['_id'] : data['senderId'].toString();
+      final String incomingReceiverId =
+          data['receiverId'] is Map ? data['receiverId']['_id'] : data['receiverId'].toString();
+
+      final bool isBetweenCurrentPair =
+          (incomingSenderId == widget.senderId && incomingReceiverId == widget.receiverId) ||
+          (incomingSenderId == widget.receiverId && incomingReceiverId == widget.senderId);
+
+      if (!isBetweenCurrentPair) return;
+
+      final newMessage = {
+        '_id': data['_id'],
+        'text': data['text'] ?? '',
+        'senderId': incomingSenderId,
+        'createdAt': DateTime.parse(data['createdAt']).toLocal(),
+        'status': 'received',
+      };
+
+      setState(() {
+        _messages.insert(0, newMessage);
+        _listKey.currentState?.insertItem(0, duration: const Duration(milliseconds: 300));
+      });
+
+      Future.delayed(const Duration(milliseconds: 50), () {
+        if (!mounted) return;
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0.0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    } catch (_) {
+      // ignore malformed event
+    }
+  }
+
+  void _onOnlineUsers(dynamic data) {
+    if (!mounted) return;
+    final Set<String> onlineUsers = Set<String>.from(data);
+    setState(() {
+      _isReceiverOnline = onlineUsers.contains(widget.receiverId);
     });
   }
 
@@ -131,15 +149,16 @@ class _ChatsScreenState extends State<ChatsScreen> {
       final token = await _storage.read(key: 'token');
       if (token == null) {
         if (mounted) {
-          Navigator.pushReplacement(context,
-              MaterialPageRoute(builder: (context) => const LoginScreen()));
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          );
         }
         return;
       }
 
       final response = await http.get(
-        Uri.parse(
-            "$BACKEND_URL/api/messages/${widget.senderId}/${widget.receiverId}?page=$currentPage"),
+        Uri.parse("$BACKEND_URL/api/messages/${widget.receiverId}"),
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -148,10 +167,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
         final List<Map<String, dynamic>> fetchedMessages = data.map((msg) {
           return {
             '_id': msg['_id'],
-            'text': msg['text'],
-            'senderId': msg['senderId'],
+            'text': msg['text'] ?? '',
+            'senderId': msg['senderId'] is Map ? msg['senderId']['_id'] : msg['senderId'],
             'createdAt': DateTime.parse(msg['createdAt']).toLocal(),
-            'clientMessageId': msg['clientMessageId'],
             'status': 'sent',
           };
         }).toList();
@@ -161,25 +179,34 @@ class _ChatsScreenState extends State<ChatsScreen> {
         }
 
         if (!_isHistoryLoaded) {
-          _messages.addAll(fetchedMessages);
           setState(() {
+            _messages.addAll(fetchedMessages.reversed);
             _isHistoryLoaded = true;
+          });
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (_scrollController.hasClients && _messages.isNotEmpty) {
+              _scrollController.jumpTo(0.0);
+            }
           });
         } else {
           final int oldLength = _messages.length;
-          _messages.addAll(fetchedMessages);
+          setState(() {
+            _messages.addAll(fetchedMessages.reversed);
+          });
           for (int i = 0; i < fetchedMessages.length; i++) {
-            _listKey.currentState?.insertItem(oldLength + i,
-                duration: const Duration(milliseconds: 300));
+            _listKey.currentState?.insertItem(
+              oldLength + i,
+              duration: const Duration(milliseconds: 300),
+            );
           }
         }
-      } else {
-        print(
-            'Failed to load chat history: ${response.statusCode} - ${response.body}');
       }
-    } catch (e) {
-      print('Error loading chat history: $e');
+    } catch (_) {
+      // swallow network errors for UX
     } finally {
+      if (!mounted) return;
       setState(() {
         isLoadingMore = false;
       });
@@ -196,53 +223,79 @@ class _ChatsScreenState extends State<ChatsScreen> {
     await _loadChatHistory();
   }
 
-  void _sendMessage() {
+  void _sendMessage() async {
     final messageText = _controller.text.trim();
-    if (messageText.isNotEmpty) {
-      final String clientMessageId = uuid.v4();
+    if (messageText.isEmpty) return;
 
-      final optimisticMessage = {
-        'text': messageText,
-        'senderId': widget.senderId,
-        'createdAt': DateTime.now().toLocal(),
-        'clientMessageId': clientMessageId,
-        'status': 'sending',
-      };
+    final optimisticMessage = {
+      'text': messageText,
+      'senderId': widget.senderId,
+      'createdAt': DateTime.now().toLocal(),
+      'status': 'sending',
+    };
+
+    setState(() {
       _messages.insert(0, optimisticMessage);
-      _listKey.currentState
-          ?.insertItem(0, duration: const Duration(milliseconds: 300));
+      _listKey.currentState?.insertItem(0, duration: const Duration(milliseconds: 300));
+    });
 
-      widget.socket?.emit('sendMessage', {
-        'senderId': widget.senderId,
-        'receiverId': widget.receiverId,
-        'text': messageText,
-        'clientMessageId': clientMessageId,
-      });
+    _controller.clear();
 
-      _controller.clear();
-      _scrollController.animateTo(
-        0.0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (!mounted) return;
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+
+    try {
+      final token = await _storage.read(key: 'token');
+      final response = await http.post(
+        Uri.parse('$BACKEND_URL/api/messages/send/${widget.receiverId}'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({'text': messageText}),
       );
-    }
-  }
 
-  Future<void> _logout() async {
-    await _storage.delete(key: 'token');
-    if (mounted) {
-      Navigator.pushReplacement(context,
-          MaterialPageRoute(builder: (context) => const LoginScreen()));
+      if (response.statusCode == 201) {
+        final data = json.decode(response.body);
+        setState(() {
+          final index = _messages.indexWhere((msg) => msg['status'] == 'sending');
+          if (index != -1) {
+            _messages[index] = {
+              '_id': data['_id'],
+              'text': data['text'],
+              'senderId': data['senderId'] is Map ? data['senderId']['_id'] : data['senderId'],
+              'createdAt': DateTime.parse(data['createdAt']).toLocal(),
+              'status': 'sent',
+            };
+          }
+        });
+      } else {
+        setState(() {
+          _messages.removeWhere((msg) => msg['status'] == 'sending');
+        });
+      }
+    } catch (_) {
+      setState(() {
+        _messages.removeWhere((msg) => msg['status'] == 'sending');
+      });
     }
   }
 
   @override
   void dispose() {
-    widget.socket?.off('receiveMessage');
-    widget.socket?.off('userOnline');
-    widget.socket?.off('userOffline');
+    widget.socket?.off('message:received', _onSocketMessageReceived);
+    widget.socket?.off('getOnlineUsers', _onOnlineUsers);
     _scrollController.dispose();
     _controller.dispose();
+    widget.onClosed?.call();
     super.dispose();
   }
 
@@ -266,38 +319,69 @@ class _ChatsScreenState extends State<ChatsScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF412ad5)),
-          onPressed: () {
-            Navigator.pop(context);
-          },
+          onPressed: () => Navigator.pop(context),
         ),
         title: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              widget.receiverUsername,
-              style: const TextStyle(
-                color: Color(0xFF412ad5),
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+            Stack(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: Colors.grey[300],
+                  child: const Icon(Icons.person, color: Colors.white),
+                ),
+                if (_isReceiverOnline)
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: Colors.green,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: _isReceiverOnline ? Colors.green : Colors.grey,
-                shape: BoxShape.circle,
-              ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.receiverUsername,
+                  style: const TextStyle(
+                    color: Color(0xFF412ad5),
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  _isReceiverOnline ? 'Online' : 'Offline',
+                  style: const TextStyle(
+                    color: Colors.grey,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.videocam, color: Color(0xFF412ad5)),
+            onPressed: _startVideoCall,
+          ),
+        ],
         backgroundColor: Colors.white,
         elevation: 0,
       ),
       body: Column(
         children: [
-          if (_isHistoryLoaded == false && _messages.isEmpty)
+          if (!_isHistoryLoaded && _messages.isEmpty)
             const LinearProgressIndicator(
               color: Color(0xFF412ad5),
               backgroundColor: Color(0xFFE8E8E8),
@@ -317,16 +401,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 key: _listKey,
                 reverse: true,
                 controller: _scrollController,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
+                padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
                 initialItemCount: _messages.length,
                 itemBuilder: (context, index, animation) {
                   if (isLoadingMore && index == _messages.length) {
                     return const Padding(
                       padding: EdgeInsets.all(8.0),
                       child: Center(
-                        child:
-                            CircularProgressIndicator(color: Color(0xFF412ad5)),
+                        child: CircularProgressIndicator(color: Color(0xFF412ad5)),
                       ),
                     );
                   }
@@ -341,9 +423,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4.0),
                       child: Row(
-                        mainAxisAlignment: isSentByMe
-                            ? MainAxisAlignment.end
-                            : MainAxisAlignment.start,
+                        mainAxisAlignment:
+                            isSentByMe ? MainAxisAlignment.end : MainAxisAlignment.start,
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           if (!isSentByMe)
@@ -352,51 +433,37 @@ class _ChatsScreenState extends State<ChatsScreen> {
                               child: CircleAvatar(
                                 radius: 16,
                                 backgroundColor: Colors.grey[300],
-                                child: const Icon(Icons.person,
-                                    color: Colors.black54, size: 20),
+                                child: const Icon(Icons.person, color: Colors.black54, size: 20),
                               ),
                             ),
-                          // FIX APPLIED HERE: Using Spacer() for sent messages
-                          if (isSentByMe)
-                            const Spacer(), // Pushes sent messages to the right
+                          if (isSentByMe) const Spacer(),
                           Flexible(
-                            // Added an explicit flex value to control width
-                            flex:
-                                0, // This tells Flexible to only take the necessary space
+                            flex: 0,
                             child: Container(
                               constraints: BoxConstraints(
-                                maxWidth: MediaQuery.of(context).size.width *
-                                    0.7, // Cap message bubble width
+                                maxWidth: MediaQuery.of(context).size.width * 0.7,
                               ),
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 10, horizontal: 12),
+                              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                               decoration: BoxDecoration(
-                                color: isSentByMe
-                                    ? const Color(0xFF412ad5)
-                                    : Colors.grey[200],
+                                color: isSentByMe ? const Color(0xFF412ad5) : Colors.grey[200],
                                 borderRadius: BorderRadius.only(
                                   topLeft: const Radius.circular(16),
                                   topRight: const Radius.circular(16),
-                                  bottomLeft: isSentByMe
-                                      ? const Radius.circular(16)
-                                      : const Radius.circular(4),
-                                  bottomRight: isSentByMe
-                                      ? const Radius.circular(4)
-                                      : const Radius.circular(16),
+                                  bottomLeft:
+                                      isSentByMe ? const Radius.circular(16) : const Radius.circular(4),
+                                  bottomRight:
+                                      isSentByMe ? const Radius.circular(4) : const Radius.circular(16),
                                 ),
                               ),
                               child: Column(
-                                crossAxisAlignment: isSentByMe
-                                    ? CrossAxisAlignment.end
-                                    : CrossAxisAlignment.start,
+                                crossAxisAlignment:
+                                    isSentByMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    message['text'],
+                                    message['text'] ?? '',
                                     style: TextStyle(
                                       fontSize: 15,
-                                      color: isSentByMe
-                                          ? Colors.white
-                                          : Colors.black87,
+                                      color: isSentByMe ? Colors.white : Colors.black87,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -404,19 +471,15 @@ class _ChatsScreenState extends State<ChatsScreen> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
-                                        DateFormat('hh:mm a')
-                                            .format(message['createdAt']),
+                                        DateFormat('hh:mm a').format(message['createdAt']),
                                         style: TextStyle(
                                           fontSize: 10,
-                                          color: isSentByMe
-                                              ? Colors.white70
-                                              : Colors.black54,
+                                          color: isSentByMe ? Colors.white70 : Colors.black54,
                                         ),
                                       ),
                                       if (isSentByMe)
                                         Padding(
-                                          padding:
-                                              const EdgeInsets.only(left: 4.0),
+                                          padding: const EdgeInsets.only(left: 4.0),
                                           child: _getStatusIcon(messageStatus),
                                         ),
                                     ],
@@ -425,10 +488,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                               ),
                             ),
                           ),
-                          // FIX APPLIED HERE: Using Spacer() for received messages (after the Flexible)
-                          if (!isSentByMe)
-                            const Spacer(), // Pushes received messages to the left
-                          // Removed the fixed SizedBox(width: 40) as Spacer() handles distribution
+                          if (!isSentByMe) const Spacer(),
                         ],
                       ),
                     ),
@@ -460,16 +520,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       decoration: InputDecoration(
                         hintText: 'Type a message',
                         hintStyle: TextStyle(color: Colors.grey[600]),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                         border: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        errorBorder: InputBorder.none,
-                        disabledBorder: InputBorder.none,
                       ),
-                      style:
-                          const TextStyle(fontSize: 16, color: Colors.black87),
+                      style: const TextStyle(fontSize: 16, color: Colors.black87),
                       onTapOutside: (event) {
                         FocusManager.instance.primaryFocus?.unfocus();
                       },
@@ -485,11 +539,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       color: Color(0xFF412ad5),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.send_rounded,
-                      color: Colors.white,
-                      size: 24,
-                    ),
+                    child: const Icon(Icons.send_rounded, color: Colors.white, size: 24),
                   ),
                 ),
               ],

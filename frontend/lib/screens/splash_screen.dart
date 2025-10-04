@@ -1,7 +1,6 @@
 import 'package:chat_app/screens/intro_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:get/get.dart'; // Still using GetX for navigation
-import 'package:flutter_svg/flutter_svg.dart'; // Import the flutter_svg package
+import 'package:get/get.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -30,13 +29,42 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: SvgPicture.asset(
-                'assets/Enginuity.svg',
-                height: 120,
+            // Replaced SVG with Icon
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                shape: BoxShape.circle,
               ),
-            )
+              child: const Icon(
+                Icons.business_center,
+                size: 80,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'ENGINUITY',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Project Management',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 40),
+            const CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 3,
+            ),
           ],
         ),
       ),

@@ -1,52 +1,45 @@
-// lib/screens/home_screen.dart
 import 'package:chat_app/screens/chat_screen.dart';
 import 'package:chat_app/screens/login_screen.dart';
 import 'package:chat_app/screens/profile_screen.dart';
 import 'package:chat_app/screens/projects_screen.dart';
-import 'package:chat_app/screens/video_conference_screen.dart';
 import 'package:chat_app/services/auth_service.dart';
+import 'package:chat_app/config/unread_bus.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
 class HomeScreen extends StatefulWidget {
-  // NEW: Add initialIndex to constructor
   final int initialIndex;
-  const HomeScreen(
-      {super.key, this.initialIndex = 0}); // Default to 0 (Projects)
+  const HomeScreen({super.key, this.initialIndex = 0});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0; // Will be set by initialIndex on first build
+  late int _selectedIndex;
   final AuthService _authService = AuthService();
 
-  static const List<Widget> _widgetOptions = <Widget>[
+  static const List<Widget> _pages = <Widget>[
     ProjectsScreen(),
     ChatScreen(),
-    VideoConferenceScreen(),
     ProfileScreen(),
   ];
 
-  final List<String> _appBarTitles = [
+  static const List<String> _titles = <String>[
     'Enginuity',
     'Chats',
-    'Video Conference',
-    'Profile'
+    'Profile',
   ];
 
   @override
   void initState() {
     super.initState();
-    _selectedIndex =
-        widget.initialIndex; // Set initial index from widget property
+    _selectedIndex = widget.initialIndex;
   }
 
   void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+    if (index == _selectedIndex) return;
+    setState(() => _selectedIndex = index);
   }
 
   Future<void> _showLogoutConfirmationDialog(BuildContext context) async {
@@ -66,9 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: <Widget>[
             TextButton(
               child: const Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              onPressed: () => Navigator.of(context).pop(),
             ),
             TextButton(
               child: const Text('Logout'),
@@ -77,8 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 await _authService.logout();
                 if (mounted) {
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(
-                        builder: (context) => const LoginScreen()),
+                    MaterialPageRoute(builder: (context) => const LoginScreen()),
                     (Route<dynamic> route) => false,
                   );
                   Fluttertoast.showToast(msg: "Logged out successfully!");
@@ -91,46 +81,93 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _chatTabIcon({required bool active}) {
+    return ValueListenableBuilder<int>(
+      valueListenable: UnreadBus.chats,
+      builder: (context, count, child) {
+        final Widget baseIcon = Icon(
+          active ? Icons.chat_bubble_rounded : Icons.chat_bubble_outline_rounded,
+          size: 26,
+        );
+
+        if (count <= 0) return baseIcon;
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            baseIcon,
+            Positioned(
+              right: -6,
+              top: -4,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                child: Center(
+                  child: Text(
+                    count > 9 ? '9+' : '$count',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    const Color brand = Color(0xFF412ad5);
+
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
         title: Text(
-          _appBarTitles[_selectedIndex],
+          _titles[_selectedIndex],
           style: const TextStyle(
-              color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold),
+            color: Colors.white,
+            fontSize: 30,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         centerTitle: true,
-        backgroundColor: const Color(0xFF412ad5),
-        actions: const [], // No actions in AppBar as per your last request
+        backgroundColor: brand,
       ),
-      body: Center(
-        child: _widgetOptions.elementAt(_selectedIndex),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _pages,
       ),
       bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home, size: 30.0),
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        selectedItemColor: brand,
+        unselectedItemColor: Colors.grey,
+        items: <BottomNavigationBarItem>[
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined, size: 28),
+            activeIcon: Icon(Icons.home, size: 28),
             label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.wechat, size: 30.0),
+            icon: _chatTabIcon(active: false),
+            activeIcon: _chatTabIcon(active: true),
             label: 'Chats',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.video_camera_front, size: 30.0),
-            label: 'Video Conference',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.account_circle, size: 30.0),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline_rounded, size: 26),
+            activeIcon: Icon(Icons.person_rounded, size: 26),
             label: 'Profile',
           ),
         ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: const Color(0xFF412ad5),
-        unselectedItemColor: Colors.grey,
-        onTap: _onItemTapped,
       ),
     );
   }

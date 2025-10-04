@@ -1,5 +1,4 @@
-# Uncomment this line to define a global platform for your project
-# platform :ios, '13.0'
+platform :ios, '14.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -28,16 +27,35 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 flutter_ios_podfile_setup
 
 target 'Runner' do
-  use_frameworks!
+  # Prefer static frameworks for better compatibility with Flutter plugins.
+  use_frameworks! :linkage => :static
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
   target 'RunnerTests' do
     inherit! :search_paths
+  end
+end
+
+# Remove duplicate aosl.xcframework bundled in AgoraRtm to avoid name conflicts with Agora RTC.
+pre_install do |installer|
+  rtm_pod_path = File.join(installer.sandbox.root, 'AgoraRtm')
+  aosl_xcframework_path = File.join(rtm_pod_path, 'aosl.xcframework')
+  if File.exist?(aosl_xcframework_path)
+    puts "Deleting aosl.xcframework from #{aosl_xcframework_path}"
+    FileUtils.rm_rf(aosl_xcframework_path)
+  else
+    puts "aosl.xcframework not found in AgoraRtm, skipping deletion."
   end
 end
 
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # Force every Pod to build for iOS 14.0 or newer to satisfy Xcode 16/iOS 18 SDK.
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+    end
   end
 end

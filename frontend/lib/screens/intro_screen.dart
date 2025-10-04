@@ -11,245 +11,204 @@ class IntroScreen extends StatefulWidget {
 }
 
 class _IntroScreenState extends State<IntroScreen> {
-  // controller to keep track of which page the user is on
-  PageController _controller = PageController();
-
-  // keep track if the user is on the last page
+  final PageController _controller = PageController();
   bool onLastPage = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _navigateToLogin() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        body: Stack(
-      children: [
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: 25.0),
-          child: PageView(
-            controller: _controller,
-            onPageChanged: (index) {
-              setState(() {
-                onLastPage = (index == 2);
-              });
-            },
-            children: [
-              // Page 1
-              Container(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 100),
-                    SvgPicture.asset(
-                      'assets/images/welcome.svg',
-                      height: 300,
-                    ),
-                    const SizedBox(height: 50),
-                    const Text(
-                      'WELCOME TO ENGINUITY!',
-                      style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // Main PageView content
+            PageView(
+              controller: _controller,
+              onPageChanged: (index) {
+                setState(() {
+                  onLastPage = (index == 2);
+                });
+              },
+              children: [
+                _buildPage(
+                  svgAsset: 'assets/images/welcome.svg',
+                  title: 'WELCOME TO ENGINUITY!',
+                  description:
                       'This app is designed for clients of EJSS Construction to help you stay updated on your project.',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.black54,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
                 ),
-              ),
-              // Page 2
-              Container(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 100),
-                    SvgPicture.asset(
-                      'assets/images/track.svg',
-                      height: 300,
-                    ),
-                    const SizedBox(height: 50),
-                    const Text(
-                      'TRACK PROJECTS',
-                      style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
+                _buildPage(
+                  svgAsset: 'assets/images/track.svg',
+                  title: 'TRACK PROJECTS',
+                  description:
                       "Keep an eye on your project's progress. Track activities, progress, and important updates, all in one place.",
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.black54,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
                 ),
-              ),
-              // Page 3
-              Container(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 100),
-                    SvgPicture.asset(
-                      'assets/images/account.svg',
-                      height: 300,
-                    ),
-                    const SizedBox(height: 50),
-                    const Text(
-                      'ACCOUNT LOG IN',
-                      style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
+                _buildPage(
+                  svgAsset: 'assets/images/account.svg',
+                  title: 'ACCOUNT LOG IN',
+                  description:
                       'To log in, use the credentials sent to your email from EJSS Construction. You can change your password anytime in the app settings after you log in.',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.black54,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+                ),
+              ],
+            ),
+
+            // Skip button (top right)
+            Positioned(
+              top: 20,
+              right: 20,
+              child: TextButton(
+                onPressed: _navigateToLogin,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color.fromRGBO(65, 42, 213, 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
+                ),
+                child: const Text(
+                  'Skip',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ],
-          ),
-        ),
-        Positioned(
-          top: 60,
-          right: 30,
-          child: GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) {
-                    return LoginScreen();
-                  },
-                ),
-              );
-            },
-            child: const Text('Skip'),
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 80.0),
-          alignment: Alignment(0, 0.75),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              // page indicator
-              SmoothPageIndicator(
-                controller: _controller,
-                count: 3,
-                effect: const WormEffect(
-                  // Changed to WormEffect to prevent dot expansion
-                  dotHeight: 10,
-                  dotWidth: 10,
-                  activeDotColor: Color.fromRGBO(65, 42, 213, 1),
-                ),
-              ),
+            ),
 
-              const SizedBox(height: 20),
-
-              // Back and Next/Done buttons
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 25.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            // Bottom section with indicators and Get Started button
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 25.0,
+                  vertical: 40.0,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // go back to previous page
-                    GestureDetector(
-                      onTap: () {
-                        _controller.previousPage(
-                          duration: const Duration(milliseconds: 200),
-                          curve: Curves.easeIn,
-                        );
-                      },
-                      child: const Text('Back'),
+                    // Page indicator
+                    SmoothPageIndicator(
+                      controller: _controller,
+                      count: 3,
+                      effect: const WormEffect(
+                        dotHeight: 10,
+                        dotWidth: 10,
+                        activeDotColor: Color.fromRGBO(65, 42, 213, 1),
+                        dotColor: Color.fromRGBO(65, 42, 213, 0.2),
+                      ),
                     ),
 
-                    // go to the next page
-                    onLastPage
-                        ? GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) {
-                                    return LoginScreen();
-                                  },
+                    const SizedBox(height: 30),
+
+                    // Get Started button (only shows on last page)
+                    AnimatedOpacity(
+                      opacity: onLastPage ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 300),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        height: onLastPage ? 56 : 0,
+                        child: onLastPage
+                            ? SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed: _navigateToLogin,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:
+                                        const Color.fromRGBO(65, 42, 213, 1),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Get Started',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
                                 ),
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 25.0,
-                                vertical: 10.0,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color.fromRGBO(65, 42, 213, 1),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: const Text(
-                                'Done',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          )
-                        : GestureDetector(
-                            onTap: () {
-                              _controller.nextPage(
-                                duration: const Duration(milliseconds: 200),
-                                curve: Curves.easeIn,
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 25.0,
-                                vertical: 10.0,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color.fromRGBO(65, 42, 213, 1),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: const Text(
-                                'Next',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(
-                height: 20,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
-    ));
+      ),
+    );
+  }
+
+  Widget _buildPage({
+    required String svgAsset,
+    required String title,
+    required String description,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 30.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Spacer(flex: 2),
+          
+          // SVG illustration
+          SvgPicture.asset(
+            svgAsset,
+            height: 280,
+          ),
+          
+          const SizedBox(height: 60),
+          
+          // Title
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+              letterSpacing: 0.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Description
+          Text(
+            description,
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.black54,
+              height: 1.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          
+          const Spacer(flex: 3),
+        ],
+      ),
+    );
   }
 }
